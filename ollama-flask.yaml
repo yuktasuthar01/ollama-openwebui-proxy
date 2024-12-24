@@ -1,0 +1,170 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: default
+data:
+  OLLAMA_API_BASE_URL: "${OLLAMA_API_BASE_URL}"
+  LANGFUSE_PUBLIC_KEY: "${LANGFUSE_PUBLIC_KEY}"
+  LANGFUSE_SECRET_KEY: "${LANGFUSE_SECRET_KEY}"
+  LANGFUSE_API_BASE_URL: "${LANGFUSE_API_BASE_URL}"
+  LANGFUSE_HOST: "${LANGFUSE_HOST}"
+  OLLAMA_BASE_URL: "${OLLAMA_BASE_URL}"
+  WEBUI_SECRET_KEY: "${WEBUI_SECRET_KEY}"
+  OPENAI_API_BASE_URL: "${OPENAI_API_BASE_URL}"
+  OPENAI_API_KEY: "${OPENAI_API_KEY}"
+  ENABLE_OAUTH_SIGNUP: "${ENABLE_OAUTH_SIGNUP}"
+  MICROSOFT_CLIENT_ID: "${MICROSOFT_CLIENT_ID}"
+  MICROSOFT_CLIENT_SECRET: "${MICROSOFT_CLIENT_SECRET}"
+  MICROSOFT_CLIENT_TENANT_ID: "${MICROSOFT_CLIENT_TENANT_ID}"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      containers:
+      - name: ollama
+        image: ollama/ollama:latest
+        volumeMounts:
+        - mountPath: /root/.ollama
+          name: ollama-data
+        tty: true
+        ports:
+        - containerPort: 11434
+      volumes:
+      - name: ollama-data
+        emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flask-proxy
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flask-proxy
+  template:
+    metadata:
+      labels:
+        app: flask-proxy
+    spec:
+      containers:
+      - name: flask-proxy
+        image: yukta123/flask-ollama
+        ports:
+        - containerPort: 5000
+        envFrom:
+        - configMapRef:
+            name: app-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flask-proxy
+  namespace: default
+spec:
+  selector:
+    app: flask-proxy
+  ports:
+  - protocol: TCP
+    port: 5000
+    targetPort: 5000
+  type: LoadBalancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: open-webui
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: open-webui
+  template:
+    metadata:
+      labels:
+        app: open-webui
+    spec:
+      containers:
+      - name: open-webui
+        image: ghcr.io/open-webui/open-webui:main
+        ports:
+        - containerPort: 8080
+        envFrom:
+        - configMapRef:
+            name: app-config
+        volumeMounts:
+        - mountPath: /app/backend/data
+          name: open-webui-data
+      volumes:
+      - name: open-webui-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: open-webui
+  namespace: default
+spec:
+  selector:
+    app: open-webui
+  ports:
+  - protocol: TCP
+    port: 3000
+    targetPort: 8080
+  type: LoadBalancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pipelines
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pipelines
+  template:
+    metadata:
+      labels:
+        app: pipelines
+    spec:
+      containers:
+      - name: pipelines
+        image: ghcr.io/open-webui/pipelines:main
+        ports:
+        - containerPort: 9099
+        volumeMounts:
+        - mountPath: /app/pipelines
+          name: pipelines-data
+      volumes:
+      - name: pipelines-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pipelines
+  namespace: default
+spec:
+  selector:
+    app: pipelines
+  ports:
+  - protocol: TCP
+    port: 9099
+    targetPort: 9099
+  type: LoadBalancer
